@@ -224,7 +224,7 @@ header{
   </div>
   <div class="live"><div class="live-dot"></div>DIA DECISIVO</div>
   <div class="hright">
-    <button class="music-btn" onclick="toggleMusic()" id="musicBtn">🎵 LIGAR MÚSICA</button>
+
     <div class="slide-ind" id="slideInd"></div>
     <div class="upd" id="upd">—</div>
   </div>
@@ -392,59 +392,239 @@ function dispararConfetti(){
 // MÚSICA ESTILO PEAKY BLINDERS (Red Right Hand feel — Web Audio)
 function startMusic(){
   audioCtx=new(window.AudioContext||window.webkitAudioContext)();
-  const master=audioCtx.createGain();master.gain.value=0.3;master.connect(audioCtx.destination);
+  const master=audioCtx.createGain();master.gain.value=0.55;master.connect(audioCtx.destination);
 
-  // Batida grave de baixo — ostinato estilo Nick Cave
-  const playNote=(freq,start,dur,vol=0.3,type='sawtooth')=>{
-    const o=audioCtx.createOscillator(),g=audioCtx.createGain(),f=audioCtx.createBiquadFilter();
-    f.type='lowpass';f.frequency.value=800;
-    o.type=type;o.frequency.value=freq;
-    g.gain.setValueAtTime(0,audioCtx.currentTime+start);
-    g.gain.linearRampToValueAtTime(vol,audioCtx.currentTime+start+0.02);
-    g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+start+dur);
-    o.connect(f);f.connect(g);g.connect(master);
-    o.start(audioCtx.currentTime+start);o.stop(audioCtx.currentTime+start+dur+0.1);
-  };
+  // REVERB sintético — dá o espaço épico
+  const convolver=audioCtx.createConvolver();
+  const reverbLen=audioCtx.sampleRate*3;
+  const reverbBuf=audioCtx.createBuffer(2,reverbLen,audioCtx.sampleRate);
+  for(let ch=0;ch<2;ch++){const d=reverbBuf.getChannelData(ch);for(let i=0;i<reverbLen;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/reverbLen,2);}
+  convolver.buffer=reverbBuf;
+  const reverbGain=audioCtx.createGain();reverbGain.gain.value=0.35;
+  convolver.connect(reverbGain);reverbGain.connect(master);
 
-  // Progressão sombria — Am / F / C / G (loop)
-  const bpm=90,beat=60/bpm;
+  const bpm=72, beat=60/bpm, bar=beat*4;
+
   const loop=()=>{
-    const t=audioCtx.currentTime;
-    // Baixo ostinato — notas A2, F2, C2, G2
-    const bassNotes=[110,87,65,98];
-    bassNotes.forEach((freq,i)=>{
-      for(let b=0;b<4;b++){
-        playNote(freq,i*beat*4+b*beat,beat*0.8,0.4,'sawtooth');
+    const now=audioCtx.currentTime;
+
+    // ── BAIXO ÉPICO (oitava profunda) ──────────────────────
+    // Progressão Am - F - C - G — a mais épica do mundo
+    const bassChords=[
+      {f:55,t:0},      // Am — A1
+      {f:43.65,t:bar}, // F1
+      {f:32.7,t:bar*2},// C1
+      {f:49,t:bar*3},  // G1
+    ];
+    bassChords.forEach(({f,t})=>{
+      for(let i=0;i<4;i++){
+        const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+        const lpf=audioCtx.createBiquadFilter();lpf.type='lowpass';lpf.frequency.value=280;
+        o.type='sawtooth';o.frequency.value=f;
+        const bt=t+i*beat;
+        g.gain.setValueAtTime(0,now+bt);
+        g.gain.linearRampToValueAtTime(0.7,now+bt+0.015);
+        g.gain.exponentialRampToValueAtTime(0.001,now+bt+beat*0.85);
+        const ws=audioCtx.createWaveShaper();
+        const cv=new Float32Array(512);for(let j=0;j<512;j++){const x=j*2/512-1;cv[j]=Math.tanh(x*2)*0.8;}
+        ws.curve=cv;
+        o.connect(ws);ws.connect(lpf);lpf.connect(g);g.connect(master);
+        o.start(now+bt);o.stop(now+bt+beat);
       }
     });
-    // Melodia sombria acima
-    const mel=[220,220,196,220,174,196,164,174];
-    mel.forEach((freq,i)=>{playNote(freq,i*beat,beat*0.9,0.15,'triangle');});
-    // Bombo
-    for(let i=0;i<4;i++){
-      const kick=audioCtx.createOscillator(),kg=audioCtx.createGain();
-      kick.frequency.setValueAtTime(150,audioCtx.currentTime+i*beat*4);
-      kick.frequency.exponentialRampToValueAtTime(40,audioCtx.currentTime+i*beat*4+0.3);
-      kg.gain.setValueAtTime(0.8,audioCtx.currentTime+i*beat*4);
-      kg.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+i*beat*4+0.4);
-      kick.connect(kg);kg.connect(master);
-      kick.start(audioCtx.currentTime+i*beat*4);
-      kick.stop(audioCtx.currentTime+i*beat*4+0.5);
-    }
-    // Hi-hat
+
+    // ── CORDAS ÉPICAS (pad) — sustain longo ───────────────
+    // Am chord: A3+C4+E4, F chord: F3+A3+C4, etc
+    const chords=[
+      [220,261.63,329.63],   // Am
+      [174.61,220,261.63],   // F
+      [130.81,164.81,196],   // C
+      [196,246.94,293.66],   // G
+    ];
+    chords.forEach((notes,ci)=>{
+      notes.forEach(f=>{
+        const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+        o.type='triangle';o.frequency.value=f;
+        const t=ci*bar;
+        g.gain.setValueAtTime(0,now+t);
+        g.gain.linearRampToValueAtTime(0.08,now+t+0.8); // ataque lento = épico
+        g.gain.setValueAtTime(0.08,now+t+bar-0.5);
+        g.gain.linearRampToValueAtTime(0,now+t+bar);
+        o.connect(g);g.connect(convolver);g.connect(master);
+        o.start(now+t);o.stop(now+t+bar+0.1);
+      });
+    });
+
+    // ── BOMBO ÉPICO — pesado, lento, poderoso ─────────────
+    // Cai em cada tempo — com porta longa
     for(let i=0;i<16;i++){
-      const buf=audioCtx.createBuffer(1,audioCtx.sampleRate*0.05,audioCtx.sampleRate);
-      const data=buf.getChannelData(0);for(let j=0;j<data.length;j++)data[j]=(Math.random()*2-1)*0.3;
-      const src=audioCtx.createBufferSource(),hg=audioCtx.createGain();
-      const hf=audioCtx.createBiquadFilter();hf.type='highpass';hf.frequency.value=8000;
-      hg.gain.setValueAtTime(0.15,audioCtx.currentTime+i*beat);
-      hg.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+i*beat+0.05);
-      src.buffer=buf;src.connect(hf);hf.connect(hg);hg.connect(master);
-      src.start(audioCtx.currentTime+i*beat);
+      const t=i*beat;
+      const isDownbeat=i%4===0;
+      const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+      o.frequency.setValueAtTime(isDownbeat?120:80,now+t);
+      o.frequency.exponentialRampToValueAtTime(28,now+t+0.6);
+      o.type='sine';
+      g.gain.setValueAtTime(0,now+t);
+      g.gain.linearRampToValueAtTime(isDownbeat?1.4:0.7,now+t+0.004);
+      g.gain.exponentialRampToValueAtTime(0.001,now+t+(isDownbeat?0.7:0.4));
+      o.connect(g);g.connect(master);
+      o.start(now+t);o.stop(now+t+0.8);
+
+      // Sub-harmônico do kick — dá o "peso" cinema
+      if(isDownbeat){
+        const sub=audioCtx.createOscillator(),sg=audioCtx.createGain();
+        sub.frequency.value=28;sub.type='sine';
+        sg.gain.setValueAtTime(0,now+t);
+        sg.gain.linearRampToValueAtTime(0.9,now+t+0.01);
+        sg.gain.exponentialRampToValueAtTime(0.001,now+t+1.0);
+        sub.connect(sg);sg.connect(master);
+        sub.start(now+t);sub.stop(now+t+1.1);
+      }
+    }
+
+    // ── CAIXA CINEMATOGRÁFICA — 2 e 4 ─────────────────────
+    [beat,beat*3,beat*5,beat*7,beat*9,beat*11,beat*13,beat*15].forEach(t=>{
+      const buf=audioCtx.createBuffer(1,audioCtx.sampleRate*0.25,audioCtx.sampleRate);
+      const data=buf.getChannelData(0);
+      for(let i=0;i<data.length;i++)data[i]=(Math.random()*2-1)*Math.pow(1-i/data.length,1.5);
+      const src=audioCtx.createBufferSource();src.buffer=buf;
+      const hpf=audioCtx.createBiquadFilter();hpf.type='bandpass';hpf.frequency.value=3000;hpf.Q.value=0.8;
+      const sg=audioCtx.createGain();
+      sg.gain.setValueAtTime(0,now+t);
+      sg.gain.linearRampToValueAtTime(0.4,now+t+0.003);
+      sg.gain.exponentialRampToValueAtTime(0.001,now+t+0.25);
+      src.connect(hpf);hpf.connect(sg);
+      sg.connect(convolver); // reverb na caixa = épico
+      sg.connect(master);
+      src.start(now+t);
+    });
+
+    // ── HIT ÉPICO a cada 2 barras (BRAAAM) ────────────────
+    // O "BRAAAM" do Inception — acorde saturado de impacto
+    if(Math.random()>0.5){ // nem sempre, dá variedade
+      const braamNotes=[55,82.5,110,146.8]; // Am power chord
+      braamNotes.forEach(f=>{
+        const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+        o.type='sawtooth';o.frequency.value=f;
+        const ws=audioCtx.createWaveShaper();
+        const cv=new Float32Array(512);for(let j=0;j<512;j++){const x=j*2/512-1;cv[j]=Math.tanh(x*4)*0.5;}
+        ws.curve=cv;
+        const lpf=audioCtx.createBiquadFilter();lpf.type='lowpass';lpf.frequency.value=1200;
+        g.gain.setValueAtTime(0,now);
+        g.gain.linearRampToValueAtTime(0.12,now+0.1);
+        g.gain.setValueAtTime(0.12,now+bar*3.8);
+        g.gain.linearRampToValueAtTime(0,now+bar*4);
+        o.connect(ws);ws.connect(lpf);lpf.connect(g);g.connect(convolver);g.connect(master);
+        o.start(now);o.stop(now+bar*4+0.1);
+      });
     }
   };
+
+  const bpm=88, beat=60/bpm, bar=beat*4;
+
+  const loop=()=>{
+    const now=audioCtx.currentTime;
+
+    // ── BOMBO (kick) ─────────────────────────────────────────
+    // Batida no 1 e no 3 — pesado, grave, lento
+    [0, bar*0.5].forEach(t=>{
+      const o=audioCtx.createOscillator(), g=audioCtx.createGain();
+      o.frequency.setValueAtTime(180, now+t);
+      o.frequency.exponentialRampToValueAtTime(35, now+t+0.35);
+      o.type='sine';
+      g.gain.setValueAtTime(0, now+t);
+      g.gain.linearRampToValueAtTime(1.2, now+t+0.005);
+      g.gain.exponentialRampToValueAtTime(0.001, now+t+0.5);
+      o.connect(g); g.connect(master);
+      o.start(now+t); o.stop(now+t+0.6);
+
+      // clique do kick (transient)
+      const buf=audioCtx.createBuffer(1,audioCtx.sampleRate*0.02,audioCtx.sampleRate);
+      const data=buf.getChannelData(0);
+      for(let i=0;i<data.length;i++) data[i]=(Math.random()*2-1)*Math.exp(-i/(audioCtx.sampleRate*0.005));
+      const src=audioCtx.createBufferSource(), cg=audioCtx.createGain();
+      cg.gain.setValueAtTime(0.6, now+t);
+      cg.gain.exponentialRampToValueAtTime(0.001, now+t+0.02);
+      src.buffer=buf; src.connect(cg); cg.connect(master);
+      src.start(now+t);
+    });
+
+    // ── CAIXA (snare) ─────────────────────────────────────────
+    // No 2 e no 4
+    [beat, beat*3].forEach(t=>{
+      // ruído branco
+      const buf=audioCtx.createBuffer(1,audioCtx.sampleRate*0.18,audioCtx.sampleRate);
+      const data=buf.getChannelData(0);
+      for(let i=0;i<data.length;i++) data[i]=(Math.random()*2-1);
+      const src=audioCtx.createBufferSource();
+      src.buffer=buf;
+      const hpf=audioCtx.createBiquadFilter(); hpf.type='highpass'; hpf.frequency.value=1200;
+      const sg=audioCtx.createGain();
+      sg.gain.setValueAtTime(0, now+t);
+      sg.gain.linearRampToValueAtTime(0.5, now+t+0.003);
+      sg.gain.exponentialRampToValueAtTime(0.001, now+t+0.18);
+      src.connect(hpf); hpf.connect(sg); sg.connect(master);
+      src.start(now+t);
+
+      // corpo da caixa (tonal)
+      const o2=audioCtx.createOscillator(), g2=audioCtx.createGain();
+      o2.frequency.value=220; o2.type='triangle';
+      g2.gain.setValueAtTime(0.25, now+t);
+      g2.gain.exponentialRampToValueAtTime(0.001, now+t+0.08);
+      o2.connect(g2); g2.connect(master);
+      o2.start(now+t); o2.stop(now+t+0.1);
+    });
+
+    // ── HI-HAT fechado ──────────────────────────────────────
+    // Todas as semínimas + subdivisões no estilo shuffle lento
+    for(let i=0;i<8;i++){
+      const t=i*beat*0.5;
+      const buf=audioCtx.createBuffer(1,audioCtx.sampleRate*0.04,audioCtx.sampleRate);
+      const data=buf.getChannelData(0);
+      for(let j=0;j<data.length;j++) data[j]=(Math.random()*2-1);
+      const src=audioCtx.createBufferSource();
+      src.buffer=buf;
+      const hpf=audioCtx.createBiquadFilter(); hpf.type='highpass'; hpf.frequency.value=9000;
+      const hg=audioCtx.createGain();
+      // hi-hat mais fraco nos contratempos
+      const vol = i%2===0 ? 0.12 : 0.06;
+      hg.gain.setValueAtTime(0, now+t);
+      hg.gain.linearRampToValueAtTime(vol, now+t+0.002);
+      hg.gain.exponentialRampToValueAtTime(0.001, now+t+0.04);
+      src.connect(hpf); hpf.connect(hg); hg.connect(master);
+      src.start(now+t);
+    }
+
+    // ── BAIXO (bass) ────────────────────────────────────────
+    // Linha de baixo Am pentatônico, grave e repetitivo
+    // A1=55, E1=41, D1=37, G1=49 (oitava abaixo)
+    const bassLine=[
+      {f:55,  t:0,        d:beat*0.9},
+      {f:55,  t:beat*0.5, d:beat*0.4},
+      {f:55,  t:beat,     d:beat*0.9},
+      {f:49,  t:beat*1.75,d:beat*0.4},
+      {f:41,  t:beat*2,   d:beat*1.8},
+      {f:44,  t:beat*3.5, d:beat*0.4},
+    ];
+    bassLine.forEach(({f,t,d})=>{
+      const o=audioCtx.createOscillator(), g=audioCtx.createGain();
+      const lpf=audioCtx.createBiquadFilter(); lpf.type='lowpass'; lpf.frequency.value=300;
+      o.type='sawtooth'; o.frequency.value=f;
+      g.gain.setValueAtTime(0, now+t);
+      g.gain.linearRampToValueAtTime(0.6, now+t+0.01);
+      g.gain.exponentialRampToValueAtTime(0.001, now+t+d);
+      // distorção leve
+      const wsh=audioCtx.createWaveShaper();
+      const curve=new Float32Array(256);
+      for(let i=0;i<256;i++){const x=i*2/256-1; curve[i]=x<0?-Math.pow(-x,0.7):Math.pow(x,0.7);}
+      wsh.curve=curve;
+      o.connect(wsh); wsh.connect(lpf); lpf.connect(g); g.connect(master);
+      o.start(now+t); o.stop(now+t+d+0.05);
+    });
+  };
+
   loop();
-  window._musicLoop=setInterval(loop,beat*16*1000);
+  window._musicLoop=setInterval(loop, bar*1000);
   musicNodes=[master];
 }
 
@@ -475,17 +655,7 @@ function celebrarVenda(nome,valor,total){
   setTimeout(()=>dispararFogos(75,30),700);
   dispararConfetti();
   // Som de celebração
-  if(musicOn&&audioCtx){
-    const freqs=[523,659,784,1047];
-    freqs.forEach((f,i)=>{
-      const o=audioCtx.createOscillator(),g=audioCtx.createGain();
-      o.frequency.value=f;o.type='sine';
-      g.gain.setValueAtTime(0.3,audioCtx.currentTime+i*0.15);
-      g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+i*0.15+0.4);
-      o.connect(g);g.connect(audioCtx.destination);
-      o.start(audioCtx.currentTime+i*0.15);o.stop(audioCtx.currentTime+i*0.15+0.5);
-    });
-  }
+  tocarSomVitoria();
   setTimeout(()=>{
     celebrando=false;
     goTo(0);
